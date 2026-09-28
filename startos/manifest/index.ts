@@ -21,7 +21,8 @@ export const manifest = setupManifest({
     },
     client: {
       source: {
-        dockerBuild: { workdir: 'client', dockerfile: 'client/Dockerfile' },
+        dockerTag:
+          'ghcr.io/alextab93/inbucket-client:v0.1.1@sha256:0c1bd3d5bffb4147d6984f22ddd391a6f73a3595d382a6ae0b0e9467d216e06b',
       },
       arch: ['x86_64', 'aarch64'],
     },

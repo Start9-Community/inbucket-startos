@@ -105,6 +105,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     ADMIN_PASSWORD: config.adminPassword,
     LUA_EVENT_TOKEN: config.luaEventToken,
     LUA_SCRIPT_PATH: '/inbucket-config/inbucket.lua',
+    LUA_CALLBACK_URL: `http://127.0.0.1:${clientPort}/v1/internal/rule-events`,
     LUA_COMPILER: 'luac5.4',
     CLIENT_PUBLIC_URL: clientPublicUrl,
     ...smtpEnvironment(smtp),
