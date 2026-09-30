@@ -6,6 +6,11 @@ import { sdk } from '../sdk'
 export const watchCredentials = sdk.setupOnInit(async (effects) => {
   const saved = await storeJson.read().const(effects)
 
+  if (saved?.client.enabled === false || saved?.adminPassword) {
+    await sdk.action.clearTask(effects, 'inbucket:set-admin-password')
+    return
+  }
+
   if (!saved?.adminPassword) {
     await sdk.action.createOwnTask(effects, setAdminPassword, 'critical', {
       reason: i18n(

@@ -10,7 +10,7 @@ Inbucket accepts mail for one domain, and you choose that domain before it will 
 
 A mail server that accepts anything addressed to your domain without you creating a mailbox first. Send to `anything@yourdomain`, and `anything` exists — useful for signing up to things you don't want in your real inbox, and for watching what an application actually sends.
 
-Four interfaces come with it:
+The authenticated client is enabled by default. With it enabled, four interfaces are available:
 
 - **Web Client Interface** — a mailbox reader with a username and password. This is the one to use.
 - **Admin Web Interface** — Inbucket's own webmail and server diagnostics.
@@ -18,6 +18,10 @@ Four interfaces come with it:
 - **Inbound SMTP** — where mail arrives.
 
 **The Admin Web Interface and the REST API have no password.** Anyone who can open them can read and delete every message. Keep them on addresses only you can reach, and use the Web Client Interface for everyday reading.
+
+To use only upstream Inbucket, turn off **Authenticated client** in **Configure Inbucket**. The Admin Web Interface, REST API, and Inbound SMTP keep their existing addresses. The Web Client Interface and its rules, notifications, stars, tags, and Trash are unavailable while the client is off. Upstream webmail and its API still have no password.
+
+Turning the client off stops its application, database, and background workers during normal operation. It keeps your messages, client account, rules, destinations, and address settings so you can enable it again later. Rules do not run for messages received while it is off, and those messages are not automatically processed through rules when it returns. Notifications already queued before disabling may resume afterward. Backups include retained client data even while the client is off. All images remain included in the package, so the download size is unchanged.
 
 ## Choosing a domain
 
@@ -35,10 +39,10 @@ If you are not sure, start with a `.test` name. Changing it later is one action.
 
 ## Getting set up
 
-1. Run **Configure Inbucket**. Enter the domain from above, choose how long messages are kept and how many each mailbox holds, and set the maximum accepted SMTP message size.
-2. Run **Set Admin Password** and save the username and password it gives you — the password is shown once.
-3. Start Inbucket. It will not start until both of the steps above are done, which is why they are the only things you can press at first.
-4. Open the **Web Client Interface** and sign in.
+1. Run **Configure Inbucket**. Enter the domain from above, choose how long messages are kept and how many each mailbox holds, and set the maximum accepted SMTP message size. Leave **Authenticated client** enabled for the private mailbox reader, or turn it off to use only upstream Inbucket.
+2. If the authenticated client is enabled, run **Set Admin Password** and save the username and password it gives you. The password is shown once. Skip this step when the client is off.
+3. Start Inbucket. A configured domain is always required; an admin password is required only for the authenticated client.
+4. Open the **Web Client Interface** and sign in, or use the **Admin Web Interface** if you disabled the client.
 
 On iPhone or iPad, open the Web Client Interface in Safari, use **Share**, then choose **Add to Home Screen**. The shortcut uses the Inbucket icon and opens without the normal Safari toolbar. It still needs a connection to your StartOS server.
 
@@ -60,11 +64,13 @@ Mail servers deliver to port 25, and StartOS publishes Inbucket's SMTP interface
    temp.yourdomain.com.     MX 10  mx.temp.yourdomain.com.
    ```
 
-5. Send a message to `hello@temp.yourdomain.com`, then open the mailbox `hello` in the Web Client Interface.
+5. Send a message to `hello@temp.yourdomain.com`, then open the mailbox `hello` in the Web Client Interface or, with the client disabled, the Admin Web Interface.
 
 ## Using Inbucket
 
 ### Web client interface
+
+This section applies when **Authenticated client** is enabled. You can change that setting later in **Configure Inbucket**. Enabling it restores saved client settings and requests an admin password only if you have not previously set one.
 
 After sign-in, **Mailboxes** shows **Recent messages** from all active mailboxes, newest first, without requiring any mailbox selection. The first 30 stored messages appear immediately; scroll to load more, or use search and filters. Archived mailboxes and messages in Trash are excluded. To browse a specific mailbox, select it in **Saved mailboxes**, or enter its name in the compact field and choose **Add**. Use **Clear** to return to Recent messages. Opening a recent message and reloading the page keeps the recent view without selecting its mailbox. The mailbox does not have to exist yet. Mailboxes you have opened are saved in that panel, where you can select several and archive the ones you are done with. Bulk actions that have nothing to change are disabled. The selected mailbox checkboxes survive immediate and repeated reloads; names that are no longer available are removed without clearing the remaining selection. Permanent mailbox deletion is available only after archiving. Saved mailboxes and Filter each have a visible close button; it or Escape closes the panel and returns focus to its trigger. Use **Search messages** to search the stored summaries by subject, sender, recipient, mailbox, or date. Open **Filter** to show read or unread messages, choose an inclusive **From** or **To** date or both, and sort the results by newest, oldest, largest, or smallest. **Clear dates** removes both date boundaries. The toolbar count is the total number of matching stored messages and does not grow as additional pages load. The list footer shows how many matching messages are currently loaded. Changing the selected mailboxes or a filter returns the list to the top. Scrolling down to its end loads one more page and another page waits for another downward list scroll. Keeping Saved mailboxes open does not continue pagination. If that request fails, the messages already visible remain available and **Load more messages** lets you retry. Before you open a message, the list uses the full workspace width and shows its sender, subject prefixed by the first tag and remaining tag count, mailbox, and date in compact columns on larger screens. On phones, the current username opens an account menu for Rules, Archived, Trash, and sign out beside **Inbucket**, and the empty message workspace fills the available height without outer whitespace. The menu closes after choosing an action, clicking elsewhere, or pressing Escape. Use **Show mailbox controls** when you need the collapsed mailbox toolbar. The list runs edge to edge and each compact row shows the subject above the sender, with the unread dot above its star. Messages received today show their local time, such as **3:25 PM**; older messages show the day and abbreviated month, such as **5 Aug**. Trash fills the available workspace height and keeps **Empty trash** compact. Archived mailboxes use a responsive card grid with compact Restore and Delete mailbox actions. Opening a message hides the list and gives the reader the full workspace width. Attachments appear as separate download cards with their type and size. Use **Back to message list** in the message action bar to close the reader, restore the list, and return keyboard focus to its heading.
 
@@ -102,9 +108,9 @@ Opening a message shows the sanitized HTML body with its supported layout and st
 
 ### Actions
 
-- **Configure Inbucket** — changes the accepted domain (see **Choosing a domain**), how long messages are kept, how many each mailbox holds, and the maximum accepted SMTP message size. Choose **Forever** to disable automatic expiration, or enter `0` messages per mailbox for no per-mailbox limit. Either unlimited setting can fill the data volume. The message-size limit remains finite, accepts 1 to 100 MiB, and defaults to 50 MiB. The form shows your current settings, and saving restarts Inbucket. Mailboxes collected under a previous domain keep their names and stay readable, new mail for that domain is rejected, lowering a storage limit deletes stored messages that no longer fit, and lowering the message-size limit rejects future messages above it.
-- **Configure SMTP** — chooses disabled email delivery, StartOS system SMTP, or custom SMTP credentials for notification email. SMTP credentials remain inside the service and never appear in a rule, browser page, generated Lua, or delivery record. The sender can be a bare address or a display address such as `Inbucket <notifications@example.com>`. Custom SMTP supports TLS and STARTTLS. Saving restarts the service. Queued emails retry with backoff after temporary failures, while disabled or invalid delivery remains visible in Rules without affecting incoming mail.
-- **Set Admin Password** — generates a new password for the Web Client Interface and shows it once. Run it again whenever you want a fresh password or have lost the one you had. Saving restarts Inbucket, and once it is back the old password no longer works and everyone signed in has been signed out.
+- **Configure Inbucket**: enables or disables the authenticated client and changes the accepted domain (see **Choosing a domain**), how long messages are kept, how many each mailbox holds, and the maximum accepted SMTP message size. The client is enabled by default; turning it off keeps its saved data. Choose **Forever** to disable automatic expiration, or enter `0` messages per mailbox for no per-mailbox limit. Either unlimited setting can fill the data volume. The message-size limit remains finite, accepts 1 to 100 MiB, and defaults to 50 MiB. The form shows your current settings, and saving restarts Inbucket. Mailboxes collected under a previous domain keep their names and stay readable, new mail for that domain is rejected, lowering a storage limit deletes stored messages that no longer fit, and lowering the message-size limit rejects future messages above it.
+- **Configure SMTP**: chooses disabled email delivery, StartOS system SMTP, or custom SMTP credentials for notification email. This action is hidden while the authenticated client is off, and saved SMTP settings are retained. SMTP credentials remain inside the service and never appear in a rule, browser page, generated Lua, or delivery record. The sender can be a bare address or a display address such as `Inbucket <notifications@example.com>`. Custom SMTP supports TLS and STARTTLS. Saving restarts the service. Queued emails retry with backoff after temporary failures, while disabled or invalid delivery remains visible in Rules without affecting incoming mail.
+- **Set Admin Password**: generates a new password for the Web Client Interface and shows it once. This action is hidden while the authenticated client is off, and its existing password is retained. Run it again whenever you want a fresh password or have lost the one you had. Saving restarts Inbucket, and once it is back the old password no longer works and everyone signed in has been signed out.
 
 ## Limitations
 

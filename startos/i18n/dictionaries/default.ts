@@ -34,10 +34,10 @@ const dict = {
   'Messages per Mailbox': 30,
   'Older messages are deleted when this limit is exceeded. Enter 0 for unlimited.': 31,
   'Configure Inbucket': 32,
-  'Choose the recipient domain, message retention period, per-mailbox message limit, and maximum SMTP message size.': 33,
+  'Choose whether to use the authenticated client, the recipient domain, storage limits, and maximum SMTP message size.': 33,
   'Messages addressed to any other domain will be rejected. Changing the domain does not rename existing mailboxes. Reducing retention or the mailbox limit can delete messages. Unlimited storage can fill the data volume.': 34,
   'Configuration Saved': 35,
-  'Inbucket is restarting with the configured domain, storage limits, and maximum SMTP message size. DNS and public TCP forwarding must be configured separately.': 36,
+  'Inbucket is restarting with the saved configuration. Client data is preserved when the authenticated client is disabled. DNS and public TCP forwarding must be configured separately.': 36,
   'Configure the disposable mail domain before starting Inbucket.': 37,
   'Set Admin Password': 38,
   'Generate the password for the Inbucket Client, the authenticated mailbox reader.': 39,
@@ -58,6 +58,8 @@ const dict = {
   'Notification Delivery Worker': 54,
   'The notification delivery worker is ready': 55,
   'The notification delivery worker is not ready': 56,
+  'Authenticated client': 57,
+  'Enable the authenticated mailbox reader, rules, and notifications. Turn off to run only Inbucket without mailbox authentication. Client data is kept for re-enabling.': 58,
 } as const
 
 /**

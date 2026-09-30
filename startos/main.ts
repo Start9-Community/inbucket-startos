@@ -47,6 +47,49 @@ export const main = sdk.setupMain(async ({ effects }) => {
   const config = await storeJson.read((store) => store).const(effects)
   if (!config?.domain)
     throw new Error('Disposable mail domain is not configured')
+
+  const inbucketSubcontainer = sdk.SubContainer.of(
+    effects,
+    { imageId: 'main' },
+    mounts,
+    'inbucket',
+  )
+  const inbucket = {
+    subcontainer: inbucketSubcontainer,
+    exec: {
+      command: sdk.useEntrypoint(),
+      env: inbucketEnvironment(config, {
+        smtp: smtpPort,
+        web: webPort,
+        pop3: pop3Port,
+      }),
+    },
+    ready: {
+      display: i18n('Admin Web Interface'),
+      gracePeriod: 60000,
+      fn: () =>
+        sdk.healthCheck.checkPortListening(effects, webPort, {
+          successMessage: i18n('The admin web interface is ready'),
+          errorMessage: i18n('The admin web interface is not ready'),
+        }),
+    },
+  }
+  const smtpReady = {
+    display: i18n('Inbound SMTP'),
+    gracePeriod: 60000,
+    fn: () =>
+      sdk.healthCheck.checkPortListening(effects, smtpPort, {
+        successMessage: i18n('The inbound SMTP listener is ready'),
+        errorMessage: i18n('The inbound SMTP listener is not ready'),
+      }),
+  }
+
+  if (!config.client.enabled) {
+    return sdk.Daemons.of(effects)
+      .addDaemon('inbucket', { ...inbucket, requires: [] })
+      .addHealthCheck('smtp', { ready: smtpReady, requires: ['inbucket'] })
+  }
+
   if (
     !config.databasePassword ||
     !config.secretKeyBase ||
@@ -110,13 +153,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
     CLIENT_PUBLIC_URL: clientPublicUrl,
     ...smtpEnvironment(smtp),
   }
-
-  const inbucketSubcontainer = sdk.SubContainer.of(
-    effects,
-    { imageId: 'main' },
-    mounts,
-    'inbucket',
-  )
 
   const postgresSubcontainer = sdk.SubContainer.of(
     effects,
@@ -183,36 +219,11 @@ export const main = sdk.setupMain(async ({ effects }) => {
       requires: ['client-database-prepare'],
     })
     .addDaemon('inbucket', {
-      subcontainer: inbucketSubcontainer,
-      exec: {
-        command: sdk.useEntrypoint(),
-        env: inbucketEnvironment(config, {
-          smtp: smtpPort,
-          web: webPort,
-          pop3: pop3Port,
-        }),
-      },
-      ready: {
-        display: i18n('Admin Web Interface'),
-        gracePeriod: 60000,
-        fn: () =>
-          sdk.healthCheck.checkPortListening(effects, webPort, {
-            successMessage: i18n('The admin web interface is ready'),
-            errorMessage: i18n('The admin web interface is not ready'),
-          }),
-      },
+      ...inbucket,
       requires: ['client-lua-prepare'],
     })
     .addHealthCheck('smtp', {
-      ready: {
-        display: i18n('Inbound SMTP'),
-        gracePeriod: 60000,
-        fn: () =>
-          sdk.healthCheck.checkPortListening(effects, smtpPort, {
-            successMessage: i18n('The inbound SMTP listener is ready'),
-            errorMessage: i18n('The inbound SMTP listener is not ready'),
-          }),
-      },
+      ready: smtpReady,
       requires: ['inbucket'],
     })
     .addOneshot('client-account-prepare', {

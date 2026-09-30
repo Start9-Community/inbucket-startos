@@ -1,8 +1,12 @@
+import { storeJson } from './fileModels/store.json'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { clientHostId, clientPort, smtpPort, webHostId, webPort } from './utils'
 
 export const setInterfaces = sdk.setupInterfaces(async ({ effects }) => {
+  const clientEnabled =
+    (await storeJson.read((store) => store.client.enabled).const(effects)) ??
+    true
   const webHost = sdk.MultiHost.of(effects, webHostId)
   const webOrigin = await webHost.bindPort(webPort, {
     protocol: 'http',
@@ -35,32 +39,6 @@ export const setInterfaces = sdk.setupInterfaces(async ({ effects }) => {
     query: {},
   })
 
-  const clientHost = sdk.MultiHost.of(effects, clientHostId)
-  const clientOrigin = await clientHost.bindPort(clientPort, {
-    protocol: 'http',
-    preferredExternalPort: 80,
-    addSsl: {
-      alpn: { specified: ['http/1.1'] },
-      preferredExternalPort: 443,
-      addXForwardedHeaders: true,
-      auth: null,
-    },
-  })
-
-  const client = sdk.createInterface(effects, {
-    name: i18n('Web Client Interface'),
-    id: 'client',
-    description: i18n(
-      'Authenticated mailbox reading, live updates, source viewing, CID images, and attachment downloads',
-    ),
-    type: 'ui',
-    masked: false,
-    schemeOverride: null,
-    username: null,
-    path: '/',
-    query: {},
-  })
-
   const smtpHost = sdk.MultiHost.of(effects, 'smtp')
   const smtpOrigin = await smtpHost.bindPort(smtpPort, {
     protocol: null,
@@ -83,9 +61,38 @@ export const setInterfaces = sdk.setupInterfaces(async ({ effects }) => {
     query: {},
   })
 
-  return [
-    await clientOrigin.export([client]),
+  const receipts = [
     await webOrigin.export([adminWebUi, restApi]),
     await smtpOrigin.export([smtp]),
   ]
+
+  if (clientEnabled) {
+    const clientHost = sdk.MultiHost.of(effects, clientHostId)
+    const clientOrigin = await clientHost.bindPort(clientPort, {
+      protocol: 'http',
+      preferredExternalPort: 80,
+      addSsl: {
+        alpn: { specified: ['http/1.1'] },
+        preferredExternalPort: 443,
+        addXForwardedHeaders: true,
+        auth: null,
+      },
+    })
+    const client = sdk.createInterface(effects, {
+      name: i18n('Web Client Interface'),
+      id: 'client',
+      description: i18n(
+        'Authenticated mailbox reading, live updates, source viewing, CID images, and attachment downloads',
+      ),
+      type: 'ui',
+      masked: false,
+      schemeOverride: null,
+      username: null,
+      path: '/',
+      query: {},
+    })
+    receipts.unshift(await clientOrigin.export([client]))
+  }
+
+  return receipts
 })

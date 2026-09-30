@@ -5,6 +5,13 @@ import { sdk } from '../sdk'
 const { InputSpec, Value } = sdk
 
 const inputSpec = InputSpec.of({
+  clientEnabled: Value.toggle({
+    name: i18n('Authenticated client'),
+    description: i18n(
+      'Enable the authenticated mailbox reader, rules, and notifications. Turn off to run only Inbucket without mailbox authentication. Client data is kept for re-enabling.',
+    ),
+    default: true,
+  }),
   domain: Value.text({
     name: i18n('Disposable Mail Domain'),
     description: i18n(
@@ -66,7 +73,7 @@ export const configureDomain = sdk.Action.withInput(
   {
     name: i18n('Configure Inbucket'),
     description: i18n(
-      'Choose the recipient domain, message retention period, per-mailbox message limit, and maximum SMTP message size.',
+      'Choose whether to use the authenticated client, the recipient domain, storage limits, and maximum SMTP message size.',
     ),
     warning: i18n(
       'Messages addressed to any other domain will be rejected. Changing the domain does not rename existing mailboxes. Reducing retention or the mailbox limit can delete messages. Unlimited storage can fill the data volume.',
@@ -79,6 +86,7 @@ export const configureDomain = sdk.Action.withInput(
   async () => {
     const config = await storeJson.read((store) => store).once()
     return {
+      clientEnabled: config?.client.enabled ?? true,
       domain: config?.domain || undefined,
       retentionPeriod: config?.retentionPeriod ?? '1h',
       mailboxMessageCap: config?.mailboxMessageCap ?? 300,
@@ -91,6 +99,7 @@ export const configureDomain = sdk.Action.withInput(
       throw new Error('Invalid disposable mail domain')
     }
     await storeJson.merge(effects, {
+      client: { enabled: input.clientEnabled },
       domain,
       retentionPeriod: input.retentionPeriod,
       mailboxMessageCap: input.mailboxMessageCap,
@@ -101,7 +110,7 @@ export const configureDomain = sdk.Action.withInput(
       version: '1',
       title: i18n('Configuration Saved'),
       message: i18n(
-        'Inbucket is restarting with the configured domain, storage limits, and maximum SMTP message size. DNS and public TCP forwarding must be configured separately.',
+        'Inbucket is restarting with the saved configuration. Client data is preserved when the authenticated client is disabled. DNS and public TCP forwarding must be configured separately.',
       ),
       result: null,
     }

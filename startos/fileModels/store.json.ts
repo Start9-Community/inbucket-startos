@@ -5,6 +5,9 @@ export const domainRegex =
   /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/
 
 export const storeShape = z.looseObject({
+  client: z
+    .looseObject({ enabled: z.boolean().catch(true) })
+    .catch({ enabled: true }),
   domain: z.string().regex(domainRegex).catch(''),
   retentionPeriod: z.enum(['15m', '1h', '6h', '24h', '168h', '0']).catch('1h'),
   mailboxMessageCap: z.number().int().min(0).max(10000).catch(300),

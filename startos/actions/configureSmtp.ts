@@ -9,13 +9,17 @@ const inputSpec = sdk.InputSpec.of({
 
 export const configureSmtp = sdk.Action.withInput(
   'configure-smtp',
-  async () => ({
+  async ({ effects }) => ({
     name: i18n('Configure SMTP'),
     description: i18n('Configure outbound notification email delivery.'),
     warning: null,
     allowedStatuses: 'any',
     group: null,
-    visibility: 'enabled',
+    visibility:
+      (await storeJson.read((store) => store.client.enabled).const(effects)) ===
+      false
+        ? 'hidden'
+        : 'enabled',
   }),
   inputSpec,
   async ({ effects }) => ({
@@ -23,5 +27,13 @@ export const configureSmtp = sdk.Action.withInput(
       await storeJson.read((store) => store.smtp).const(effects),
     ),
   }),
-  async ({ effects, input }) => storeJson.merge(effects, { smtp: input.smtp }),
+  async ({ effects, input }) => {
+    const enabled = await storeJson.read((store) => store.client.enabled).once()
+    if (enabled === false) {
+      throw new Error(
+        'Enable the authenticated client before configuring notification SMTP.',
+      )
+    }
+    await storeJson.merge(effects, { smtp: input.smtp })
+  },
 )
