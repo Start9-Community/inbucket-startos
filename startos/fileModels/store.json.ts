@@ -1,10 +1,13 @@
-import { FileHelper, z } from '@start9labs/start-sdk'
+import { FileHelper, smtpShape, z } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
 
 export const domainRegex =
   /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/
 
 export const storeShape = z.looseObject({
+  client: z
+    .looseObject({ enabled: z.boolean().catch(true) })
+    .catch({ enabled: true }),
   domain: z.string().regex(domainRegex).catch(''),
   retentionPeriod: z.enum(['15m', '1h', '6h', '24h', '168h', '0']).catch('1h'),
   mailboxMessageCap: z.number().int().min(0).max(10000).catch(300),
@@ -13,9 +16,16 @@ export const storeShape = z.looseObject({
   secretKeyBase: z.string().min(64).catch(''),
   adminUsername: z.string().trim().min(1).default('admin'),
   adminPassword: z.string().min(16).catch(''),
+  luaEventToken: z.string().min(32).catch(''),
+  smtp: smtpShape.catch({ selection: 'disabled', value: {} }),
 })
 
 export const storeJson = FileHelper.json(
   { base: sdk.volumes.main, subpath: './store.json' },
   storeShape,
 )
+
+export const ruleLuaFile = FileHelper.string({
+  base: sdk.volumes.main,
+  subpath: 'config/inbucket.lua',
+})

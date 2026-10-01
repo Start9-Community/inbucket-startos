@@ -1,4 +1,5 @@
 export type InbucketEnvironmentConfig = {
+  client?: { enabled: boolean }
   domain: string
   retentionPeriod: '15m' | '1h' | '6h' | '24h' | '168h' | '0'
   mailboxMessageCap: number
@@ -26,4 +27,7 @@ export const inbucketEnvironment = (
   INBUCKET_STORAGE_PARAMS: 'path:/storage',
   INBUCKET_STORAGE_RETENTIONPERIOD: config.retentionPeriod,
   INBUCKET_STORAGE_MAILBOXMSGCAP: String(config.mailboxMessageCap),
+  ...((config.client?.enabled ?? true)
+    ? { INBUCKET_LUA_PATH: '/config/inbucket.lua' }
+    : {}),
 })

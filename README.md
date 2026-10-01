@@ -11,7 +11,7 @@
 
 Inbucket is a disposable mail server: it accepts SMTP for a whole domain without any mailbox existing beforehand, and makes every message it receives readable through webmail and a REST API.
 
-This package adds an authenticated mailbox client of its own alongside upstream, because upstream's interface has no login.
+This package adds an optional authenticated mailbox client alongside upstream, because upstream's interface has no login. The **Authenticated client** toggle in **Configure Inbucket** defaults to enabled, including for existing installations. Turn it off to run only upstream Inbucket.
 
 ---
 
@@ -35,19 +35,21 @@ This package adds an authenticated mailbox client of its own alongside upstream,
 
 ## Image and Container Runtime
 
-Three images, one of which is this repository's own application.
+Three published images, all pinned by digest in the manifest.
 
 | Image      | Source                                                     | Entrypoint                     |
 | ---------- | ---------------------------------------------------------- | ------------------------------ |
 | `main`     | Upstream `inbucket/inbucket`, unmodified, pinned by digest | Upstream's                     |
-| `client`   | Built from `client/`, this repository's own application     | `puma`, and three Rails runners |
+| `client`   | `ghcr.io/alextab93/inbucket-client`, pinned by digest       | Puma and Rails runners        |
 | `postgres` | Upstream `postgres` alpine, pinned by digest               | Upstream's                     |
 
-All three build for `x86_64` and `aarch64`.
+All three support `x86_64` and `aarch64` and remain included in the S9PK when the authenticated client is disabled. The toggle reduces running processes and resource usage, not package size.
 
-The `client` image is not a wrapper around anything upstream — it is a Rails API and a Vite-built browser frontend written for this package, backed by its own PostgreSQL. Its whole source is `client/`, which Docker builds as its own context; the repository root holds only the StartOS package. It exists because upstream Inbucket's webmail deliberately has no authentication: anyone who can reach it can read every mailbox. The client puts a login in front of the same data, which it reads through upstream's REST API and monitor websocket over loopback.
+The `client` image contains a Rails API and a Vite-built browser frontend backed by PostgreSQL. Its source and image releases are maintained separately in [inbucket-client](https://github.com/alextab93/inbucket-client); this repository owns the StartOS configuration and runtime integration. It exists because upstream Inbucket's webmail deliberately has no authentication: anyone who can reach it can read every mailbox. The client puts a login in front of the same data, which it reads through upstream's REST API and monitor websocket over loopback.
 
-Three subcontainers run: `inbucket` (upstream), `client-postgres`, and `client-app`. The last hosts the Puma web server, the monitor, the reconciler, and two setup oneshots in one subcontainer, so they share a filesystem. Attach with `start-cli package attach inbucket -n client-app`.
+With the authenticated client enabled, three subcontainers run: `inbucket` (upstream), `client-postgres`, and `client-app`. The last hosts Puma, the monitor, the reconciler, the notification-delivery worker, and three setup oneshots in one subcontainer, so they share a filesystem. Attach with `start-cli package attach inbucket -n client-app`.
+
+With the authenticated client disabled, only `inbucket` runs. PostgreSQL, Rails, the client workers, and their health checks are absent, and `INBUCKET_LUA_PATH` is omitted so a retained hook cannot call the stopped client. The database, secrets, configuration, and client address settings remain available for re-enabling. Rules do not run while the client is off, and messages received during that time are not automatically replayed through rules afterward. Previously queued notification deliveries can resume when the client is enabled again.
 
 ## Authenticated Client Architecture
 
@@ -89,7 +91,7 @@ App
     └── Confirmation boundary
 ```
 
-`App` owns authentication, active-view navigation, the saved-mailbox catalog, tag definitions, selected mailboxes, the active mailbox query, loaded message pages, the next cursor, selected message identities, optimistic star updates, and URL restoration. Unpaginated lists own their search, read filter, optional mailbox and tag filters, sort, and filter-panel state. `MessageInspector` owns only the selected message response, attachments, source, loading state, and visible errors. Derived counts, accessible summaries, active-control indicators, and disabled states are calculated during rendering rather than copied into state.
+`App` owns authentication, active-view navigation, the saved-mailbox catalog, tag definitions, selected mailboxes, the active mailbox query, loaded message pages, the next cursor, selected message identities, optimistic star updates, and URL restoration. The Rules feature owns its loaded message rules, reusable notification destinations, compact bridge status, and edit form. Its UI is grouped under `components/rules/`, with separate destination, rule-list, match-preview, tooltip, bridge-status, presentation, and form modules. The global notification menu owns delivery status, unread count, browser permission, and delivery actions. Unpaginated lists own their search, read filter, optional mailbox and tag filters, sort, and filter-panel state. `MessageInspector` owns only the selected message response, attachments, source, loading state, and visible errors. Derived counts, accessible summaries, active-control indicators, and disabled states are calculated during rendering rather than copied into state.
 
 | State category | Values |
 | -------------- | ------ |
@@ -98,7 +100,7 @@ App
 | User-input state | Credentials, selected mailboxes, live-update scope, search text, read filter, Starred and Trash mailbox filters, sort, open tools, source visibility |
 | Derived render values | Visible and ordered messages, counts, labels, empty explanations, selected styling, enabled actions |
 
-The client remains on `/` and does not require a path-based SPA fallback. Mailboxes is the default view and omits `view`. Starred, Trash, and Archived use `view=starred`, `view=trash`, and `view=archive`. Mailboxes stores one selected mailbox in `mailbox` or several in repeated `mailboxes` parameters so the complete selection survives reload and browser history. Selection changes update that address before the message request completes. After the active catalog loads, unavailable mailbox names are removed while every remaining valid selection is preserved. Mailboxes, Starred, and Trash may include `mailbox` and `message` for their own selected message. Archived discards those selection parameters. Legacy `view=monitor` addresses are replaced with the Mailboxes root and discard obsolete mailbox and message parameters. View changes push browser history, while direct loading and browser back or forward restore one of the four represented views.
+The client remains on `/` and does not require a path-based SPA fallback. Mailboxes is the default view and omits `view`. Starred, Trash, Archived, and Rules use `view=starred`, `view=trash`, `view=archive`, and `view=rules`. Mailboxes stores one selected mailbox in `mailbox` or several in repeated `mailboxes` parameters so the complete selection survives reload and browser history. Selection changes update that address before the message request completes. After the active catalog loads, unavailable mailbox names are removed while every remaining valid selection is preserved. Mailboxes, Starred, and Trash may include `mailbox` and `message` for their own selected message. Archived and Rules discard those selection parameters. Legacy `view=monitor` addresses are replaced with the Mailboxes root, while `view=notifications` is replaced with Rules. View changes push browser history, while direct loading and browser back or forward restore one of the five represented views.
 
 Inbucket's `seen` value remains part of fetched message and monitor data. It is updated in React only after the upstream-backed read request succeeds. There is no second unread collection or client-side read database.
 
@@ -110,6 +112,14 @@ Trash is per-user metadata linked to the same bounded `InbucketMessage` row with
 
 The shared metadata contract uses `(mailbox, message_id)` as identity and stores sender, recipients, subject, received time, size, upstream `seen`, availability, and separate monitor, mailbox-scan, and direct-fetch observation times. `received_at` followed by the database identifier is the deterministic ordering boundary. The observation times show which sources have observed a row. There is no local `reviewed` or competing unread state.
 
+Rules are versioned, declarative records in that same private database. Each account receives one disabled `ALL` example rule with empty conditions and an in-app notification action, showing that empty match conditions select every new message. They can match indexed mailbox, sender, recipient, subject, size, tag, time-window, and bounded attachment metadata, then combine notification, star, mark-read, apply-tag, and move-to-Trash actions. Leaving every optional match condition empty matches every new message, while existing messages are not replayed when the rule is saved. The preview validates and evaluates only match conditions, so a rule name and actions do not affect its results. Time windows are stored and evaluated in UTC. The rule editor identifies the browser timezone and displays entered UTC times in that local timezone using the current week's offset, without changing the persisted UTC schedule. Move to Trash creates the same reversible per-user metadata as the message interface while keeping the upstream message, read state, and star. Permanent deletion remains a confirmed manual action in Trash. Named notification destinations belong to one user and contain one or more Email, ntfy, or Webhook methods. The Send a notification action manages and selects those destinations in compact rows. Edit a saved destination to review its configured methods, send a real per-method test, or change its configuration. ntfy methods may include an optional Bearer access token for protected topics; it is never included in the destination list or API responses. On edit, the token input is blank, and leaving it blank retains the saved token while entering a value replaces it. A configured custom Webhook body is shown only while editing that destination and is sent during its test. The destination editor derives its next ntfy host and Webhook URL defaults from the signed-in user's most recently updated saved destinations. Without a saved ntfy destination, its host is blank. Topics, access tokens, methods, headers, bodies, and recipients are not copied. The rule editor groups optional match conditions into collapsible sections and displays recent matches in a modal dialog. Priority orders the rule list with higher values first. Cooldown is the minimum number of seconds after a run before that rule may run again, with 0 permitting every match. The editable rule is the source of truth. Rails evaluates it after durable message indexing, applies idempotent message actions, and writes idempotent in-app, browser, and destination delivery records before asynchronous delivery begins. Delivery records keep only rule name, message identity, status, a non-secret destination label, timestamps, and a generic error code. They never hold the message body, raw source, destination URL, headers, body, SMTP credentials, or sensitive headers. Disabling or deleting a rule disables pending and retried deliveries. Deleting a destination removes it from affected rules, disables queued work, and disables a rule when no action remains.
+
+Creating or editing a destination opens a dialog. Cancel, Escape, or an outside click closes it. Saving incorporates the values currently shown for an existing delivery method, so an updated Webhook request body is saved without separately replacing that method.
+
+After browser permission is granted, its switch controls whether Inbucket sends browser alerts. Turning it off stops alerts without revoking browser permission; browser settings are required to revoke or unblock that permission.
+
+Inbucket loads a deterministic generated Lua event bridge that reports only a stored-message identity and a revision through loopback. The hook contains no SMTP credentials, matching logic, retry logic, recipients, or free-form user Lua. It is package-owned executable code and is not exposed or editable in the browser. Rule edits update Rails data and do not reload the hook. During install, upgrade, and service start, the client syntax-checks generated source before atomically replacing the package-owned file; Inbucket starts only after that preflight succeeds. A failed check retains the prior file and exposes only a generic bridge status. The monitor remains the durable ingestion path, so a Lua failure cannot stop indexing or mail acceptance.
+
 The websocket monitor records new arrivals and deletion events immediately. The browser establishes the live cursor before loading its initial message page, then polls from that cursor after the page finishes so arrivals during startup are retained. It polls bounded changes over the shared Rails index, without rescanning selected upstream mailboxes or clearing loaded pages. Available changes merge by mailbox and message identifier, retain upstream `seen` plus the signed-in user's stars and tags, and exclude unavailable tombstones. Observation-only mailbox refreshes do not advance the live cursor, and updates to summaries outside the loaded pages do not append those historical rows to the visible list. Live updates include every active mailbox by default but merge only new events, so enabling that scope never loads complete mailbox histories. Recent messages always follows all active mailboxes; its live toggle stays checked and disabled until a mailbox is selected. With an explicit selection, the user can limit live updates to selected mailboxes with that toggle. A newly discovered active mailbox is added to the catalog. It joins an existing explicit selection, while the Recent messages view keeps every checkbox unselected and an archived mailbox stays archived. Retryable polling failures leave current rows visible, while authorization failure expires the browser session. A separate reconciler scans every saved mailbox once at startup and every 24 hours, retrying after five minutes when any mailbox fails. Inbucket does not expose a mailbox-catalog endpoint, so historical mailboxes unknown to Rails are not complete until the user opens them or a new monitor event names them. A successful complete mailbox response is authoritative for availability. Direct deletion, mailbox purge, monitor deletion, and a later successful scan remove stars. Starring is serialized with deletion and reconciliation for the same mailbox, and unavailable messages are excluded from Starred. Failed scans never infer deletion. Unavailable metadata tombstones are retained for seven days and then removed during reconciliation.
 
 This index is the scalable boundary for mailbox search, read filtering, received-date filtering, sorting, and pagination. The bounded Rails endpoint returns at most 30 summaries by default and accepts no more than 100. It uses an opaque cursor over the selected sort value and database identifier, includes the exact number of matching stored summaries before cursor slicing, reports mailboxes whose initial refresh failed, and never stores message bodies. Date inputs represent inclusive local calendar dates. The browser sends their UTC instants as an inclusive `received_after` boundary and an exclusive `received_before` boundary. Changing the selected mailboxes or query resets the internal list to the top, clears its cursor and loaded rows, and requires a new downward list scroll before automatic pagination. The browser appends each page without duplicates, keeps the matching total stable while pages load, reports the loaded and matching totals at the end of the list, consumes one user scroll for one next cursor, ignores stale responses from superseded selections, and retains an accessible retry control when loading fails.
@@ -117,7 +127,7 @@ This index is the scalable boundary for mailbox search, read filtering, received
 ### Behavior contract
 
 - Access starts by checking the private session. The visible outcomes are signed out, authenticating, authenticated, expired session, and temporarily unavailable. Login clears the password, disables duplicate submission while pending, reports incorrect credentials separately, and restores focus after an access-state change. Sign out clears active-view and message selection and restores the canonical root URL.
-- Navigation exposes exactly Mailboxes, Starred, Archived, and Trash through ordinary buttons with `aria-current`, not partial tab semantics. Each view updates the canonical query URL, reload and browser history restore that view, and a legacy Monitor URL opens Mailboxes at the root.
+- Navigation keeps Mailboxes and Starred as primary buttons. A global bell exposes the unread count, browser-notification configuration, and durable delivery history from every authenticated view. The bell menu and current-user menu close after outside interaction or Escape, and opening either closes the other. The current-user menu exposes Rules, Archived, Trash, and sign out. Both menus remain reachable at phone widths. Each view updates the canonical query URL, reload and browser history restore that view, a legacy Monitor URL opens Mailboxes at the root, and the former Notifications URL opens Rules.
 - The Saved mailboxes panel has one compact mailbox-name field with an adjacent Add action. It loads any trimmed mailbox name and restores matching archived metadata through the mailbox endpoint. Active mailboxes support individual selection, Select all, Clear, and Archive selected, with unavailable bulk actions disabled. Permanent mailbox deletion is available only from Archived and requires confirmation. Live all active mailboxes is enabled by default and can be turned off to limit new arrivals to the current selection. Successful archive items leave a partial-failure selection while failed items remain available for retry. Live arrivals can add active catalog metadata but never restore an archived mailbox.
 - With no mailboxes selected, the initial Mailboxes view shows Recent messages across all active mailboxes, newest first, using the stored index without refreshing upstream histories. It loads 30 messages at a time and supports the same search, filters, sorting, and pagination as an explicit selection. Archived mailboxes, unavailable messages, and the current user's Trash are excluded. Opening a recent message and reloading its URL preserves the recent scope without selecting its mailbox. Clearing a selection returns to Recent messages.
 - Selected mailboxes load through one bounded Rails query. The first page refreshes their stored metadata and visibly identifies any mailbox that could not be refreshed while retaining cached results. Search, read filtering, the selected tag, and received-date boundaries run at the Rails data boundary before exact totals and cursor slicing. Changing the selection or any filter resets pagination and the list scroll position. The toolbar reports the total number of matching stored summaries rather than the number of pages already loaded, while the list footer reports how many are currently shown. Sorting supports newest, oldest, largest, and smallest with a stable cursor and unknown values after known values. A new downward scroll to the end loads one next page without duplicates, while failure keeps the existing messages and offers a retry. With no message selected, the list fills the workspace and shows sender, subject prefixed by the first tag and remaining count, mailbox, and date in compact columns on larger screens. Selecting a message hides the list and gives the reader the full workspace width. The message action bar closes the reader, restores the list, and returns focus to its heading.
@@ -168,15 +178,15 @@ Rails normalizes parameter errors to `422` JSON, missing records to `404` JSON, 
 
 ### Delivery and security contract
 
-`client/frontend/index.html` is the authored shell. Vite clears `client/public/`, creates its `index.html`, and emits content-fingerprinted JavaScript, CSS, images, and split chunks under `assets/`. The Docker Node stage builds those files once, and the final Ruby image copies only `/build/public` into `/app/public`. Puma and Rails static middleware serve `/`, generated assets, `/up`, and `/v1/*` from one origin. StartOS exports that Puma origin as the HTTPS Web Client Interface at `/`.
+In the separate client repository, `frontend/index.html` is the authored shell. Vite clears `public/`, creates its `index.html`, and emits content-fingerprinted JavaScript, CSS, images, and split chunks under `assets/`. The Docker Node stage builds those files once, and the final Ruby image copies only `/build/public` into `/app/public`. Puma and Rails static middleware serve `/`, generated assets, `/up`, and `/v1/*` from one origin. When enabled, StartOS exports that Puma origin as the HTTPS Web Client Interface at `/`.
 
-The shell links a root-scoped web app manifest and dedicated PNG icons from `client/frontend/public`. The manifest launches the HTTPS Web Client Interface in standalone display mode, while the Apple touch icon and compatibility metadata provide the same branded Home Screen behavior on iPhone and iPad. The installed app uses the same HttpOnly cookie session and same-origin network APIs. It has no service worker or offline message cache, so Inbucket must remain reachable.
+The shell links a root-scoped web app manifest and dedicated PNG icons from the client repository's `frontend/public`. The manifest launches the HTTPS Web Client Interface in standalone display mode, while the Apple touch icon and compatibility metadata provide the same branded Home Screen behavior on iPhone and iPad. The installed app uses the same HttpOnly cookie session and same-origin network APIs. It has no service worker or offline message cache, so Inbucket must remain reachable.
 
 Rails sends `Cache-Control: no-cache` for `/`, `/index.html`, `/manifest.webmanifest`, and the stable Home Screen icon paths, so they revalidate after a package upgrade. Files under `/assets/` receive `Cache-Control: public, max-age=31536000, immutable` because Vite gives every production asset a content fingerprint. Private `/v1/*` responses use `private, no-store`.
 
 The document CSP remains `default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'`. Application scripts and styles are external same-origin assets. The email frame has its own response CSP with `default-src 'none'`, no scripts, objects, frames, forms, or base URI, inline sender styles allowed only inside the isolated frame, and remote image origins allowed only after explicit consent. It also sends `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`.
 
-The Makefile treats every file under `client/` as a client build input. A change to any of them invalidates the architecture-specific `.s9pk` target even when `start-cli s9pk list-ingredients` does not enumerate the full Docker context. Release candidates still use `make clean x86` and `make clean arm` so validation never depends on a cached client image or stale `public/` output.
+The package build consumes the published client image referenced by the manifest. Client source changes require a new image release and an updated digest in `startos/manifest/index.ts`. Release candidates use `make clean x86` and `make clean arm` to rebuild package ingredients for both architectures.
 
 ## Volume and Data Layout
 
@@ -186,23 +196,24 @@ Two volumes: received mail on one, the client's own state on the other.
 | ----------------- | -------------------------- | -------------------------------------------------------------------- |
 | `main`            | `/config`, `/storage`      | Upstream's config, messages, indexes, and shared `seen` state        |
 | `main`            | not mounted                | `store.json`, at the volume root                                     |
-| `client-postgres` | `/var/lib/postgresql/data` | Users, sessions, mailbox catalog, bounded shared message metadata, per-user stars and Trash links, tag definitions, and tag assignments |
+| `client-postgres` | `/var/lib/postgresql/data` | Users, sessions, mailbox catalog, bounded shared message metadata, per-user stars and Trash links, tags, message rules, notification destinations, rule bridge state, and delivery records |
 
-Only the `config` and `storage` subdirectories of `main` are mounted, so `store.json` sits beside them and is not visible to any container that does not need it. Messages themselves are files under `/storage`, one directory per mailbox — Inbucket's file store, not a database.
+Inbucket and the client share `main/config` for the generated event hook, while `store.json` sits at the volume root and is not mounted into either container. Messages themselves are files under `/storage`, one directory per mailbox: Inbucket's file store, not a database.
 
 ## File Models
 
-One model, holding StartOS-side state. Upstream Inbucket has no configuration file the package owns; everything it is told arrives as an environment variable, re-applied on every start.
+Two files hold StartOS-side state. Upstream Inbucket receives its ordinary settings as environment variables re-applied on every start. The package owns the generated Lua event hook.
 
 | Model        | File              | Seeded                                    | Rewritten       |
 | ------------ | ----------------- | ----------------------------------------- | --------------- |
-| `store.json` | `main:store.json` | At install, and by **Set Admin Password** | By both actions |
+| `store.json` | `main:store.json` | At install, and by **Set Admin Password** | By all configuration actions |
+| `inbucket.lua` | `main:config/inbucket.lua` | At install or upgrade when the event token is absent | By the rule generator |
 
-It carries two unrelated things. The first is the settings the user chose: accepted domain, retention period, per-mailbox message cap, and maximum SMTP message size. These are read at start and turned into `INBUCKET_*` variables. Changing any of them requires a restart to take effect, and the service reads them fresh each time, so an edit made here always wins.
+It carries two unrelated things. The first is the settings the user chose: `client.enabled` (defaults to `true`), accepted domain, retention period, per-mailbox message cap, maximum SMTP message size, the outbound SMTP selection, and the Lua event token. Inbucket settings are read at start and turned into `INBUCKET_*` variables. The SMTP settings and event token are passed only to the enabled client subcontainer. Custom SMTP credentials never reach upstream Inbucket, the browser, generated Lua, logs, or delivery records.
 
 The second is the client's own secrets: its PostgreSQL password and Rails signing key, seeded once at install and never regenerated — a restore keeps the ones that came with the backup, which is what lets the restored database still be read. The client's password sits alongside them but is minted only by **Set Admin Password**; init never generates one.
 
-**`main` reads the store reactively**, so writing it restarts the service. That is how both actions take effect, and why neither asks the user to restart anything.
+**`main` reads the store reactively**, so writing it restarts the service and applies configuration changes, including the authenticated client toggle.
 
 ## Dependencies
 
@@ -210,7 +221,7 @@ None.
 
 ## Network Access and Interfaces
 
-Four interfaces across three hosts. The split matters: two of them have no authentication at all.
+With the authenticated client enabled, four interfaces are available across three hosts. Two of them have no authentication at all.
 
 | Interface            | Id         | Type  | Host     | Port | Purpose                                          |
 | -------------------- | ---------- | ----- | -------- | ---- | ------------------------------------------------ |
@@ -221,29 +232,33 @@ Four interfaces across three hosts. The split matters: two of them have no authe
 
 **`ui` and `rest-api` share one host and neither requires a credential.** Anyone who can reach either can read, and delete, every message in every mailbox. They are upstream's own interfaces and behave exactly as upstream documents; the package adds nothing to them. `client` is the one to publish for ordinary use.
 
+Disabling the authenticated client removes its exported interface while preserving its address settings for re-enabling. The Admin Web Interface, REST API, and Inbound SMTP remain available through their existing bindings. The toggle does not add authentication to upstream webmail or its API and does not publish new addresses.
+
 `smtp` is raw TCP with no TLS — Inbucket is a receiver for testing and disposable addresses, and it accepts plaintext SMTP on 2500. Internet mail arrives on port 25, so reaching it from outside needs an external 25 → 2500 forward; an HTTP reverse proxy cannot carry SMTP. POP3 is bound to loopback only and is not exported.
 
 ## Installation and First-Run Flow
 
-Install generates the client's database password and Rails signing key, then raises two `critical` tasks: one pointing at **Configure Inbucket**, because Inbucket has nothing to accept mail for without a domain, and one at **Set Admin Password**, because the client has no credential until it is run. Both block startup.
+Install generates the client's database password and Rails signing key, then raises two `critical` tasks: one pointing at **Configure Inbucket**, because Inbucket has nothing to accept mail for without a domain, and one at **Set Admin Password**, because the default enabled client has no credential until it is run. Turning off **Authenticated client** in **Configure Inbucket** clears the password task, so upstream Inbucket can start once its domain is configured. Re-enabling requires a password only when none was previously configured.
 
-On the first start after that, the client's PostgreSQL initialises, `client-database-prepare` creates its schema, and `client-account-prepare` writes the administrator account from `store.json`. That sync runs on every start, which is what applies a rotated password — the action writes the store, the store change restarts the service, and the oneshot re-syncs the account.
+On the first start with the client enabled, its PostgreSQL initialises, `client-database-prepare` creates its schema, and `client-account-prepare` writes the administrator account from `store.json`. That sync runs on every enabled start, which applies a rotated password: the action writes the store, the store change restarts the service, and the oneshot re-syncs the account. Starting with the client disabled skips this preparation and does not initialize its database.
 
 ## Actions
 
-Two actions, both user-facing.
+Three actions, all user-facing.
 
 ### Configure Inbucket
 
-- **When to run it** — at install, prompted by the task; afterwards to change the accepted domain, the storage limits, or the maximum SMTP message size.
+- **When to run it**: at install, prompted by the task; afterwards to enable or disable the authenticated client or change the domain, storage limits, or maximum SMTP message size.
 - **What the domain is** — a literal match against the recipient address, nothing more. It is never resolved, and the package never verifies ownership, so a reserved name like `mailbox.test` is a perfectly valid answer for someone only feeding Inbucket from their own applications. A domain the user owns is needed only to receive mail from the internet, which additionally needs the port-25 forward under [Limitations](#limitations-and-differences).
-- **What it changes** — the domain, retention period, per-mailbox cap, and maximum SMTP message size in `store.json`. The form is pre-filled with what is already saved. Choosing **Forever** disables automatic message expiration, and a per-mailbox cap of `0` allows unlimited messages. Either unlimited setting can fill the data volume. The message-size limit remains finite, accepts 1 to 100 MiB, and defaults to 50 MiB.
+- **What it changes**: the authenticated client toggle, domain, retention period, per-mailbox cap, and maximum SMTP message size in `store.json`. The form is pre-filled with what is already saved. The client defaults to enabled; disabling it preserves its database, credentials, and settings. Choosing **Forever** disables automatic message expiration, and a per-mailbox cap of `0` allows unlimited messages. Either unlimited setting can fill the data volume. The message-size limit remains finite, accepts 1 to 100 MiB, and defaults to 50 MiB.
 - **Cost** — instant to save. The new values reach Inbucket on its next start.
 - **Repeat safety** — idempotent.
-- **What happens next** — restart to apply. Changing the domain does not rename existing mailboxes, and mail for the old domain stops being accepted. Lowering retention or the message cap deletes stored messages that no longer fit. Lowering the SMTP message-size limit rejects future messages above that limit.
+- **What happens next**: the service restarts automatically. Changing the domain does not rename existing mailboxes, and mail for the old domain stops being accepted. Lowering retention or the message cap deletes stored messages that no longer fit. Lowering the SMTP message-size limit rejects future messages above that limit.
 - **Outputs** — none.
 
 ### Set Admin Password
+
+This action is hidden while the authenticated client is off. Existing credentials remain stored.
 
 - **When to run it** — at install, prompted by the task; afterwards to rotate the password, including after losing it.
 - **What it changes** — generates a new random password and writes it to `store.json`. The `client-account-prepare` oneshot applies it to the client's account on the restart that follows.
@@ -251,19 +266,30 @@ Two actions, both user-facing.
 - **Repeat safety** — safe to repeat, and never a no-op: each run mints a new password and discards the previous one.
 - **Outputs** — the username and the new password, shown once. There is no action that reads it back — rotating is how a lost password is replaced.
 
+### Configure SMTP
+
+This action is hidden while the authenticated client is off. Existing SMTP settings remain stored for re-enabling.
+
+- **When to run it** — before enabling an outbound email action in a message rule, or whenever its sender configuration changes.
+- **What it changes** — selects disabled delivery, StartOS system SMTP, or custom SMTP credentials. The sender can be a bare address or a display address such as `Inbucket <notifications@example.com>`. The custom form accepts TLS or STARTTLS.
+- **Cost** — saving restarts the client processes. Inbound mail remains Inbucket's responsibility, while the durable delivery worker resumes queued notifications after startup.
+- **Repeat safety** — safe to repeat. Disabled SMTP creates no outbound connection, and queued email records are marked disabled.
+- **Outputs** — none. Credentials are never displayed by the client or rule editor.
+
 ## Tasks
 
-Two tasks, both raised from init rather than only at install.
+Two setup tasks are checked by init. The password task applies only while the authenticated client is enabled.
 
 | Task                       | Severity   | Raised by                        | Cleared by         |
 | -------------------------- | ---------- | -------------------------------- | ------------------ |
 | Run **Configure Inbucket** | `critical` | Init, whenever `domain` is unset | Running the action |
+| Run **Set Admin Password** | `critical` | Client enabled without a saved admin password | Setting the password or disabling the client |
 
 `critical` blocks Inbucket from starting and suspends the ordinary Start/Stop controls, so a user reporting "there are no buttons" is looking at this. The check runs on every init, not only at install, so clearing the domain raises it again.
 
 ## Health Checks
 
-Six checks, and the ordering between them is the diagnostic.
+Seven checks when the client is enabled. With it disabled, only `inbucket` and `smtp` are registered.
 
 | Check             | Probes                                                       |
 | ----------------- | ------------------------------------------------------------ |
@@ -272,6 +298,7 @@ Six checks, and the ordering between them is the diagnostic.
 | `client-postgres` | `pg_isready` against the client's database                   |
 | `client-monitor`  | The monitor's ready file exists — requires the account setup |
 | `client-reconciler` | The startup reconciliation finished — requires Inbucket and the account setup |
+| `notification-delivery-worker` | The notification delivery worker's ready file exists — requires account setup |
 | `client`          | `GET /up` on the Rails client                                |
 
 `smtp` failing while `inbucket` passes means the listener did not bind — almost always a domain Inbucket rejected at start.
@@ -284,20 +311,25 @@ Six checks, and the ordering between them is the diagnostic.
 
 ## Backups and Restore
 
-The strategy is mixed. `main` — every received message and upstream's config — is copied wholesale. `client-postgres` is **dumped and replayed**, not copied: its files are never captured, and restore rebuilds the database by replaying the dump into a fresh cluster.
+The strategy is mixed. `main`, containing every received message and the service configuration, is copied wholesale. An initialized `client-postgres` database is **dumped and replayed**, including while the authenticated client is disabled. Backup temporarily starts PostgreSQL to create the dump, then stops it. Disabling the client never excludes retained client data from backups.
+
+If the database has never initialized, both volumes are copied without starting PostgreSQL. Restore selects the matching backup format, preserving the disabled mode for a fresh upstream-only installation and restoring a retained client database even when its client remains disabled.
+
+New backups record their database format explicitly. A missing required dump fails restore instead of falling back to an older volume snapshot. Backups created before the format marker remain supported.
 
 Nothing is deliberately excluded. A restored instance needs nothing re-entered: the domain and storage settings come back in `store.json`, the client's account, saved mailbox catalog, shared metadata index, per-user stars, tag definitions, and tag assignments come back in the dump, and the credentials that worked before the backup still work.
 
-The bounded shared metadata index, per-user star links, tag definitions, and tag assignments are in the database dump. Message headers, including Inbucket's canonical `seen` state, are stored with the messages on `main`. The startup reconciliation refreshes the Rails index from those headers after restore.
+The bounded shared metadata index, per-user star links, tag definitions, tag assignments, message rules, notification destinations, rule bridge state, and delivery records are in the database dump. Message headers, including Inbucket's canonical `seen` state, are stored with the messages on `main`. Startup reconciliation refreshes the Rails index from those headers when the authenticated client runs after restore.
 
 ## Limitations and Differences
 
 1. **Upstream's web interface and REST API have no authentication and the package does not add any.** This is upstream's design, not a gap; it is why the client exists.
-2. **The SMTP listener has no TLS**, so mail arrives in the clear. It is a receiver for testing and disposable addresses.
+2. **The inbound SMTP listener has no TLS**, so mail arrives in the clear. Outbound notification email is separate, optional, and uses the configured TLS or STARTTLS server.
 3. **POP3 is bound to loopback and not exported.** Upstream serves it; here it is unreachable.
 4. **Only one domain is accepted at a time.** Upstream can accept several; the package's action takes one.
 5. **The client renders HTML mail only after sanitizing it** inside an isolated frame. Sender CSS and complex table layouts are preserved. Remote images are blocked by default and load only after explicit approval. `cid:` images are proxied through an authenticated endpoint, only common raster formats are returned, and attachments download instead of displaying inline, including PDF and SVG files. Its desktop workspace uses the full width for either the message list or the selected message reader, with client-side search, read and unread filtering, a cross-mailbox Starred view backed by bounded shared PostgreSQL metadata and per-user links, date and size sorting of loaded mailbox and monitor metadata, unread indicators backed by Inbucket's shared `seen` state, and mailbox creation and management from the compact toolbar.
-6. **Reaching Inbucket from the internet needs an external port 25 forward.** StartOS publishes the SMTP interface on 2500 and cannot map 25 for you.
+6. **Notifications are not replies or automatic forwarding.** Outbound rule email contains only a bounded summary and a link. It does not resend an original message or trust addresses from message headers.
+7. **Reaching Inbucket from the internet needs an external port 25 forward.** StartOS publishes the SMTP interface on 2500 and cannot map 25 for you.
 
 ## Quick Reference for AI Consumers
 
@@ -305,15 +337,18 @@ The bounded shared metadata index, per-user star links, tag definitions, and tag
 package_id: inbucket
 images:
   main: inbucket/inbucket
-  client: built from client/
+  client: ghcr.io/alextab93/inbucket-client
   postgres: postgres
 architectures: [x86_64, aarch64]
-subcontainers: [inbucket, client-app, client-postgres]
+authenticated_client: { setting: client.enabled, default: true }
+subcontainers_with_client: [inbucket, client-app, client-postgres]
+subcontainers_without_client: [inbucket]
 volumes:
   main: /config, /storage
   client-postgres: /var/lib/postgresql/data
 file_models:
   - store.json
+  - config/inbucket.lua
 startos_managed_env_vars:
   - INBUCKET_MAILBOXNAMING
   - INBUCKET_SMTP_ADDR
@@ -330,6 +365,7 @@ startos_managed_env_vars:
   - INBUCKET_STORAGE_PARAMS
   - INBUCKET_STORAGE_RETENTIONPERIOD
   - INBUCKET_STORAGE_MAILBOXMSGCAP
+  - INBUCKET_LUA_PATH
   - DATABASE_URL
   - SECRET_KEY_BASE
   - RAILS_ENV
@@ -338,27 +374,38 @@ startos_managed_env_vars:
   - INBUCKET_BASE_URL
   - ADMIN_USERNAME
   - ADMIN_PASSWORD
+  - LUA_EVENT_TOKEN
+  - LUA_SCRIPT_PATH
+  - OUTBOUND_SMTP_ENABLED
+  - OUTBOUND_SMTP_HOST
+  - OUTBOUND_SMTP_PORT
+  - OUTBOUND_SMTP_USERNAME
+  - OUTBOUND_SMTP_PASSWORD
+  - OUTBOUND_SMTP_FROM
+  - OUTBOUND_SMTP_SECURITY
   - POSTGRES_DB
   - POSTGRES_USER
   - POSTGRES_PASSWORD
   - PGDATA
 dependencies: none
 interfaces:
-  client: { type: ui, port: 3000 }
+  client: { type: ui, port: 3000, requires_authenticated_client: true }
   ui: { type: ui, port: 9000 }
   rest-api: { type: api, port: 9000 }
   smtp: { type: api, port: 2500 }
 actions:
   - configure-domain
+  - configure-smtp
   - set-admin-password
 tasks:
   - { action: configure-domain, severity: critical }
-  - { action: set-admin-password, severity: critical }
+  - { action: set-admin-password, severity: critical, requires_authenticated_client: true }
 health_checks:
   - inbucket
   - smtp
   - client-postgres
   - client-monitor
   - client-reconciler
+  - notification-delivery-worker
   - client
 ```

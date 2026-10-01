@@ -20,12 +20,17 @@ export const setAdminPassword = sdk.Action.withoutInput(
         : null,
       allowedStatuses: 'any',
       group: null,
-      visibility: 'enabled',
+      visibility: saved?.client.enabled === false ? 'hidden' : 'enabled',
     }
   },
 
   async ({ effects }) => {
     const saved = await storeJson.read().once()
+    if (saved?.client.enabled === false) {
+      throw new Error(
+        'Enable the authenticated client before setting its password.',
+      )
+    }
     const adminPassword = utils.getDefaultString({
       charset: 'a-z,A-Z,0-9',
       len: 32,
