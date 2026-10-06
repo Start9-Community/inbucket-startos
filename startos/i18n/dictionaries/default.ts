@@ -25,7 +25,7 @@ const dict = {
   'Inbucket accepts mail addressed to this domain and rejects everything else. It is a filter, not a claim of ownership — nothing here is looked up in DNS. Use a name you own if you want mail from the internet; otherwise any reserved name will do, such as mailbox.test.': 21,
   'Enter a dotted domain such as mailbox.test, without a scheme, path, port, or trailing dot.': 22,
   'Message Retention': 23,
-  'Delete messages after this amount of time.': 24,
+  'How long a message is kept before Inbucket deletes it. Messages per Mailbox applies either way.\n- 15 minutes to 7 days: a message is deleted once it reaches this age\n- Forever: messages are never deleted for their age': 24,
   '15 minutes': 25,
   '1 hour': 26,
   '6 hours': 27,

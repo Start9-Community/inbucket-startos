@@ -99,11 +99,17 @@ async function isolateVolume(t: TestContext) {
   )
   const volume = sdk.volumes.main.subpath('')
   const resolve = (file: unknown) =>
-    typeof file === 'string' && file.startsWith(volume)
+    typeof file === 'string' && `${file}/`.startsWith(volume)
       ? path.join(directory, file.slice(volume.length))
       : file
 
-  for (const method of ['access', 'readFile', 'writeFile', 'mkdir'] as const) {
+  for (const method of [
+    'access',
+    'readFile',
+    'writeFile',
+    'mkdir',
+    'realpath',
+  ] as const) {
     const original = fs[method].bind(fs) as (
       file: unknown,
       ...args: unknown[]

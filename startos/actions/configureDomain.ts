@@ -33,7 +33,9 @@ const inputSpec = InputSpec.of({
   }),
   retentionPeriod: Value.select({
     name: i18n('Message Retention'),
-    description: i18n('Delete messages after this amount of time.'),
+    description: i18n(
+      'How long a message is kept before Inbucket deletes it. Messages per Mailbox applies either way.\n- 15 minutes to 7 days: a message is deleted once it reaches this age\n- Forever: messages are never deleted for their age',
+    ),
     default: '1h',
     values: {
       '15m': i18n('15 minutes'),
