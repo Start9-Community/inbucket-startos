@@ -6,6 +6,3 @@ node_modules/
 docker-images
 javascript
 ncc-cache
-client/log/*
-client/tmp/*
-client/public/

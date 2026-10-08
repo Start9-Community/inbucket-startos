@@ -72,7 +72,7 @@ export const setInterfaces = sdk.setupInterfaces(async ({ effects }) => {
       protocol: 'http',
       preferredExternalPort: 80,
       addSsl: {
-        alpn: { specified: ['http/1.1'] },
+        alpn: ['http/1.1'],
         preferredExternalPort: 443,
         addXForwardedHeaders: true,
         auth: null,
