@@ -53,6 +53,7 @@ export const setAdminPassword = sdk.Action.withoutInput(
             value: saved?.adminUsername ?? 'admin',
             copyable: true,
             qr: false,
+            launchable: false,
             masked: false,
           },
           {
@@ -62,6 +63,7 @@ export const setAdminPassword = sdk.Action.withoutInput(
             value: adminPassword,
             copyable: true,
             qr: false,
+            launchable: false,
             masked: true,
           },
         ],
