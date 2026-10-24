@@ -15,14 +15,18 @@ export const manifest = setupManifest({
     main: {
       source: {
         dockerTag:
-          'inbucket/inbucket:3.1.1@sha256:4a4c4cf553967e1863e4f48c828774786ac9ee73c53b3a3ecef10f66e5a2cdfb',
+          'inbucket/inbucket:3.2.0@sha256:48063d73be66889d95c43a6ee18ed5db08e3ad01196d8f7aa1e7f1e6e4625d93',
       },
       arch: ['x86_64', 'aarch64'],
     },
     client: {
       source: {
-        dockerTag:
-          'ghcr.io/alextab93/inbucket-client:v0.1.1@sha256:0c1bd3d5bffb4147d6984f22ddd391a6f73a3595d382a6ae0b0e9467d216e06b',
+        dockerBuild: {
+          buildArgs: {
+            IMAGE:
+              'ghcr.io/alextab93/inbucket-client:v0.1.1@sha256:0c1bd3d5bffb4147d6984f22ddd391a6f73a3595d382a6ae0b0e9467d216e06b',
+          },
+        },
       },
       arch: ['x86_64', 'aarch64'],
     },

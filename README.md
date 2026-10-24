@@ -35,12 +35,12 @@ This package adds an optional authenticated mailbox client alongside upstream, b
 
 ## Image and Container Runtime
 
-Three published images, all pinned by digest in the manifest.
+Three published images, all pinned by digest in the manifest. The repository's `Dockerfile` layers a CA bundle refresh onto the pinned `client` image, whose notification senders verify TLS against `/etc/ssl/cert.pem`. The layer is temporary and comes out once upstream ships an image built on a fixed store.
 
 | Image      | Source                                                     | Entrypoint                     |
 | ---------- | ---------------------------------------------------------- | ------------------------------ |
 | `main`     | Upstream `inbucket/inbucket`, unmodified, pinned by digest | Upstream's                     |
-| `client`   | `ghcr.io/alextab93/inbucket-client`, pinned by digest       | Puma and Rails runners        |
+| `client`   | `ghcr.io/alextab93/inbucket-client`, pinned by digest, CA bundle refreshed | Puma and Rails runners |
 | `postgres` | Upstream `postgres` alpine, pinned by digest               | Upstream's                     |
 
 All three support `x86_64` and `aarch64` and remain included in the S9PK when the authenticated client is disabled. The toggle reduces running processes and resource usage, not package size.
@@ -337,7 +337,7 @@ The bounded shared metadata index, per-user star links, tag definitions, tag ass
 package_id: inbucket
 images:
   main: inbucket/inbucket
-  client: ghcr.io/alextab93/inbucket-client
+  client: ghcr.io/alextab93/inbucket-client + root Dockerfile (CA store upgrade)
   postgres: postgres
 architectures: [x86_64, aarch64]
 authenticated_client: { setting: client.enabled, default: true }

@@ -1,6 +1,6 @@
 # Updating the upstream version
 
-This package pairs the official `inbucket/inbucket` image with a Rails client built from this repository. Only the first has an upstream to track; the client is ours and versions with the package.
+This package pairs the official `inbucket/inbucket` image with the Rails client image `ghcr.io/alextab93/inbucket-client`, published from [inbucket-client](https://github.com/alextab93/inbucket-client) on each `v*` tag.
 
 ## Determining the upstream version
 
@@ -26,4 +26,4 @@ This package pairs the official `inbucket/inbucket` image with a Rails client bu
 
 ## Changing the Rails client
 
-The client lives in `client/` and is versioned by the package, not by upstream. Bump the packaging revision after `:` in `startos/versions/current.ts` and rebuild; there is no separate release to track. `bundle exec rspec`, run inside `client/`, covers its request and service specs and needs a real PostgreSQL test database.
+The client's source and image releases live in [inbucket-client](https://github.com/alextab93/inbucket-client). Its pin is `images.client.source.dockerBuild.buildArgs.IMAGE` in `startos/manifest/index.ts`, as `ghcr.io/alextab93/inbucket-client:<tag>@sha256:<digest>`; the repository's `Dockerfile` builds on it. Resolve the digest as for Inbucket above and bump the packaging revision after `:` in `startos/versions/current.ts`.
