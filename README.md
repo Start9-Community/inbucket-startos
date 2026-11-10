@@ -236,6 +236,8 @@ Disabling the authenticated client removes its exported interface while preservi
 
 `smtp` is raw TCP with no TLS — Inbucket is a receiver for testing and disposable addresses, and it accepts plaintext SMTP on 2500. Internet mail arrives on port 25, so reaching it from outside needs an external 25 → 2500 forward; an HTTP reverse proxy cannot carry SMTP. POP3 is bound to loopback only and is not exported.
 
+**Inbound SMTP listens on IPv4 only:** Inbucket 3.2.0 opens it as `tcp4` (`pkg/server/smtp/listener.go`). StartOS still lists the interface's IPv6 addresses, and connections to them are refused — point senders at an IPv4 address, or a domain that resolves to one.
+
 ## Installation and First-Run Flow
 
 Install generates the client's database password and Rails signing key, then raises two `critical` tasks: one pointing at **Configure Inbucket**, because Inbucket has nothing to accept mail for without a domain, and one at **Set Admin Password**, because the default enabled client has no credential until it is run. Turning off **Authenticated client** in **Configure Inbucket** clears the password task, so upstream Inbucket can start once its domain is configured. Re-enabling requires a password only when none was previously configured.

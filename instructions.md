@@ -15,7 +15,7 @@ The authenticated client is enabled by default. With it enabled, four interfaces
 - **Web Client Interface** — a mailbox reader with a username and password. This is the one to use.
 - **Admin Web Interface** — Inbucket's own webmail and server diagnostics.
 - **REST API** — Inbucket's mailbox API, for scripts.
-- **Inbound SMTP** — where mail arrives.
+- **Inbound SMTP** — where mail arrives. It accepts IPv4 only, so point senders at an IPv4 address rather than one of the IPv6 addresses listed for it.
 
 **The Admin Web Interface and the REST API have no password.** Anyone who can open them can read and delete every message. Keep them on addresses only you can reach, and use the Web Client Interface for everyday reading.
 
